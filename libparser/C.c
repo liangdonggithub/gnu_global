@@ -37,7 +37,7 @@
 
 static void C_family(const struct parser_param *, int);
 static void process_attribute(const struct parser_param *);
-static int function_definition(const struct parser_param *, char *);
+static int function_definition(const struct parser_param *, char *, char);
 static void condition_macro(const struct parser_param *, int);
 static int enumerator_list(const struct parser_param *);
 
@@ -81,6 +81,8 @@ C(const struct parser_param *param)
 {
 	C_family(param, TYPE_C);
 }
+
+#define IsNormalToken(c) (c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'))
 /**
  *	@param[in]	param	source file
  *	@param[in]	type	TYPE_C, TYPE_YACC, TYPE_LEX
@@ -148,7 +150,16 @@ C_family(const struct parser_param *param, int type)
 					 *
 					 * We should assume the first argument as a function name instead of 'SCM_DEFINE'.
 					 */
-					if (function_definition(param, arg1)) {
+					char* ptmp;
+					char firsttoken[500];
+					int tmpidx = 0;
+					ptmp = saveline;
+					while (!IsNormalToken(*ptmp))
+						ptmp++;
+					while (IsNormalToken(*ptmp))
+						firsttoken[tmpidx++] = *ptmp++;
+					firsttoken[tmpidx] = 0;
+					if (function_definition(param, arg1, strcmp(firsttoken, "asmlinkage")? 0: 1)) {
 						if (!strcmp(savetok, "SCM_DEFINE") && *arg1)
 							strlimcpy(savetok, arg1, sizeof(savetok));
 						PUT(PARSER_DEF, savetok, savelineno, saveline);
@@ -516,7 +527,7 @@ process_attribute(const struct parser_param *param)
  *	@return	target type
  */
 static int
-function_definition(const struct parser_param *param, char arg1[MAXTOKEN])
+function_definition(const struct parser_param *param, char arg1[MAXTOKEN], char asmlinkage)
 {
 	int c;
 	int brace_level, isdefine;
@@ -581,6 +592,9 @@ function_definition(const struct parser_param *param, char arg1[MAXTOKEN])
 		    && ((c == SYMBOL && strcmp(token, "__THROW")) || IS_RESERVED_WORD(c)))
 			isdefine = 1;
 		else if (c == ';' || c == ',') {
+			if (asmlinkage && c == ';') {
+				return 1;
+			}
 			if (!isdefine)
 				break;
 		} else if (c == '{' /* } */) {
